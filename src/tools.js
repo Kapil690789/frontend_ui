@@ -1,23 +1,53 @@
 // All available workflow tools and their configuration
 export const API_URL = 'http://localhost:8000/workflows/run';
 
+// ── Brand presets for Scene7 Downloader ──────────────────────────────────────
+export const BRAND_PRESETS = {
+  kate_spade: {
+    label: 'Kate Spade',
+    base_url_template: 'https://katespade.scene7.com/is/image/KateSpade/{}?scl=1',
+    code_transform: 'upper',
+    column_name: 'Bag code',
+    status_column: 'Status',
+  },
+  coach: {
+    label: 'Coach',
+    base_url_template: 'https://coach.scene7.com/is/image/Coach/{}_a0?scl=1',
+    code_transform: 'lower',
+    column_name: 'Bag_code',
+    status_column: 'Upload_Status',
+  },
+};
+
+// ── Tool definitions ─────────────────────────────────────────────────────────
 export const TOOLS = [
+  // ── 1. Scene7 Image Downloader ──────────────────────────────────────
   {
     id: 'scene7_downloader',
     name: 'Scene7 Image Downloader',
-    description: 'Download product images from Kate Spade or Coach Scene7 CDN based on a Google Sheet.',
-    icon: '📸',
-    color: 'from-pink-600/20 to-rose-600/10',
-    borderColor: 'border-pink-500/30',
-    iconBg: 'bg-pink-600/20',
+    description: 'Download product images from Scene7 CDN using codes from a Google Sheet and upload them to Drive.',
+    category: 'Images',
     fields: [
+      {
+        key: '_brand_preset',
+        label: 'Brand Preset',
+        type: 'brand_select',
+        help: 'Selecting a brand auto-fills the URL template, column names and transform settings.',
+      },
       { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
-      { key: 'column_name', label: 'Code Column Name', type: 'text', placeholder: 'Bag code', required: true, defaultValue: 'Bag code' },
-      { key: 'drive_folder_id', label: 'Drive Folder ID (destination)', type: 'text', placeholder: '1NjyIOB4f...', required: true },
-      { key: 'base_url_template', label: 'Scene7 Base URL Template', type: 'text', placeholder: 'https://katespade.scene7.com/is/image/KateSpade/{}?scl=1', required: true, defaultValue: 'https://katespade.scene7.com/is/image/KateSpade/{}?scl=1' },
-      { key: 'code_transform', label: 'Code Transform', type: 'select', options: ['none', 'upper', 'lower'], defaultValue: 'upper', help: 'UPPER for Kate Spade, lower for Coach' },
+      { key: 'column_name', label: 'Image Code Column', type: 'text', placeholder: 'Bag code', required: true, defaultValue: 'Bag code' },
+      { key: 'drive_folder_id', label: 'Destination Drive Folder ID', type: 'text', placeholder: '1NjyIOB4f...', required: true },
+      { key: 'base_url_template', label: 'Scene7 Base URL Template', type: 'text', placeholder: 'https://katespade.scene7.com/is/image/KateSpade/{}?scl=1', required: true, defaultValue: '' },
+      {
+        key: 'code_transform', label: 'Code Transform', type: 'select',
+        options: [{ value: 'none', label: 'None (keep as-is)' }, { value: 'upper', label: 'UPPER CASE' }, { value: 'lower', label: 'lower case' }],
+        defaultValue: 'upper',
+        help: 'Kate Spade → UPPER, Coach → lower',
+      },
       { key: 'status_column', label: 'Status Column Name', type: 'text', placeholder: 'Status', defaultValue: 'Status' },
-      { key: 'check_url_exists', label: 'Check URL Before Downloading', type: 'boolean', defaultValue: true, help: 'Skip 404 images to avoid broken downloads' },
+      { key: 'check_url_exists', label: 'Pre-flight URL Check', type: 'boolean', defaultValue: true, help: 'Send a HEAD request before downloading to skip broken/missing images.' },
+      { key: 'overwrite', label: 'Overwrite Existing Files', type: 'boolean', defaultValue: false },
+      { key: 'max_workers', label: 'Parallel Workers', type: 'number', defaultValue: 4 },
     ],
     buildPayload: (fields) => ({
       tenant_id: 'scene7_downloader',
@@ -28,37 +58,36 @@ export const TOOLS = [
         steps: [],
         global_steps: [{
           activity: 'download_and_upload_scene7_images',
-          id: 'download_images',
+          id: 'download_scene7',
           inputs: {
             file_uri: '${input.file_uri}',
             column_name: fields.column_name,
             base_url_template: fields.base_url_template,
             drive_folder_id: fields.drive_folder_id,
-            overwrite: false,
+            overwrite: bool(fields.overwrite),
             code_transform: fields.code_transform === 'none' ? null : fields.code_transform,
             status_column: fields.status_column || 'Status',
-            check_url_exists: fields.check_url_exists === true || fields.check_url_exists === 'true',
+            check_url_exists: bool(fields.check_url_exists),
+            max_workers: Number(fields.max_workers) || 4,
           },
         }],
       },
     }),
   },
 
+  // ── 2. PDF Generator ─────────────────────────────────────────────────
   {
     id: 'pdf_generator',
     name: 'PDF Generator',
-    description: 'Create printable PDFs from a Google Sheet with product images and descriptions.',
-    icon: '📄',
-    color: 'from-amber-600/20 to-orange-600/10',
-    borderColor: 'border-amber-500/30',
-    iconBg: 'bg-amber-600/20',
+    description: 'Generate printable PDF catalogs from image links in a Google Sheet and upload to S3.',
+    category: 'PDF',
     fields: [
       { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
       { key: 's3_bucket', label: 'S3 Bucket', type: 'text', placeholder: 'flock-generation-automation', defaultValue: 'flock-generation-automation', required: true },
-      { key: 's3_prefix', label: 'S3 Prefix (output folder)', type: 'text', placeholder: 'pdf_test', defaultValue: 'pdf_test', required: true },
+      { key: 's3_prefix', label: 'S3 Output Prefix', type: 'text', placeholder: 'pdf_test', defaultValue: 'pdf_test', required: true },
       { key: 'images_per_row', label: 'Images Per Row', type: 'number', defaultValue: 3 },
       { key: 'rows_per_pdf', label: 'Rows Per PDF', type: 'number', defaultValue: 25 },
-      { key: 'max_workers', label: 'Max Workers (Parallelism)', type: 'number', defaultValue: 10 },
+      { key: 'max_workers', label: 'Parallel Workers', type: 'number', defaultValue: 10 },
     ],
     buildPayload: (fields) => ({
       tenant_id: 'pdf_gen',
@@ -86,19 +115,17 @@ export const TOOLS = [
     }),
   },
 
+  // ── 3. Drive Folder Sync ──────────────────────────────────────────────
   {
     id: 'drive_folder_sync',
     name: 'Drive Folder Sync',
-    description: 'Match SKU names from a sheet to subfolders in Google Drive and write folder links back.',
-    icon: '📂',
-    color: 'from-blue-600/20 to-cyan-600/10',
-    borderColor: 'border-blue-500/30',
-    iconBg: 'bg-blue-600/20',
+    description: 'Scan a Drive folder for subfolders, match them to SKU IDs in a sheet, and write folder links back.',
+    category: 'Drive',
     fields: [
       { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
-      { key: 'drive_folder_id', label: 'Drive Folder ID (to scan)', type: 'text', placeholder: '1kQO7uq3cW8...', required: true },
+      { key: 'drive_folder_id', label: 'Drive Folder ID to Scan', type: 'text', placeholder: '1kQO7uq3cW8...', required: true },
       { key: 'sku_column', label: 'SKU Column Name', type: 'text', placeholder: 'Sku_id', defaultValue: 'Sku_id', required: true },
-      { key: 'target_column', label: 'Target Column (to write links)', type: 'text', placeholder: 'Edit folder links', defaultValue: 'Edit folder links', required: true },
+      { key: 'target_column', label: 'Target Column (for links)', type: 'text', placeholder: 'Edit folder links', defaultValue: 'Edit folder links', required: true },
     ],
     buildPayload: (fields) => ({
       tenant_id: 'drive_folder_sync',
@@ -121,14 +148,12 @@ export const TOOLS = [
     }),
   },
 
+  // ── 4. SKU Image Organizer ────────────────────────────────────────────
   {
     id: 'sku_organizer',
     name: 'SKU Image Organizer',
-    description: 'Find SKU images in a source folder, copy them into per-SKU subfolders, and update the sheet.',
-    icon: '🗂️',
-    color: 'from-green-600/20 to-emerald-600/10',
-    borderColor: 'border-green-500/30',
-    iconBg: 'bg-green-600/20',
+    description: 'Find images in a source Drive folder by SKU prefix, copy them to per-SKU subfolders in the destination, and update the sheet.',
+    category: 'Drive',
     fields: [
       { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
       { key: 'source_folder_id', label: 'Source Drive Folder ID', type: 'text', placeholder: '1d_0_5vL5iO8...', required: true },
@@ -153,21 +178,19 @@ export const TOOLS = [
             destination_folder_id: fields.destination_folder_id,
             sku_column: fields.sku_column,
             output_column: fields.output_column,
-            overwrite: fields.overwrite === true || fields.overwrite === 'true',
+            overwrite: bool(fields.overwrite),
           },
         }],
       },
     }),
   },
 
+  // ── 5. SKU Folder Creator ──────────────────────────────────────────────
   {
     id: 'sku_folder_creator',
     name: 'SKU Folder Creator',
-    description: 'Read SKU IDs from a sheet, create Drive folders for each, download product/source images, and write links back.',
-    icon: '📁',
-    color: 'from-violet-600/20 to-purple-600/10',
-    borderColor: 'border-violet-500/30',
-    iconBg: 'bg-violet-600/20',
+    description: 'Create Drive folders per SKU, download product and source images into subfolders, and write folder links back to the sheet.',
+    category: 'Drive',
     fields: [
       { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
       { key: 'output_folder_id', label: 'Output Drive Folder ID', type: 'text', placeholder: '1jEUBAFpMvhz...', required: true },
@@ -176,6 +199,7 @@ export const TOOLS = [
       { key: 'product_image_column', label: 'Product Image Column', type: 'text', placeholder: 'Product image', defaultValue: 'Product image' },
       { key: 'source_image_column', label: 'Source Image Column', type: 'text', placeholder: 'Source image', defaultValue: 'Source image' },
       { key: 'overwrite', label: 'Overwrite Existing', type: 'boolean', defaultValue: false },
+      { key: 'timeout_minutes', label: 'Timeout (minutes)', type: 'number', defaultValue: 60 },
     ],
     buildPayload: (fields) => ({
       tenant_id: 'sku_folder_creator',
@@ -187,13 +211,13 @@ export const TOOLS = [
         global_steps: [{
           activity: 'organize_sku_folders_in_drive',
           id: 'organize_sku_folders',
-          timeout_minutes: 60,
+          timeout_minutes: Number(fields.timeout_minutes),
           inputs: {
             file_uri: '${input.file_uri}',
             output_folder_id: fields.output_folder_id,
             sku_column: fields.sku_column,
             folder_link_column: fields.folder_link_column,
-            overwrite: fields.overwrite === true || fields.overwrite === 'true',
+            overwrite: bool(fields.overwrite),
             image_columns: [
               { column: fields.product_image_column, subfolder: 'Product Image' },
               { column: fields.source_image_column, subfolder: 'Source Image' },
@@ -204,17 +228,15 @@ export const TOOLS = [
     }),
   },
 
+  // ── 6. Image Links to Sheet ────────────────────────────────────────────
   {
     id: 'image_links_to_sheet',
     name: 'Image Links to Sheet',
-    description: 'Recursively scan a Drive folder for images and write their links into a Google Sheet.',
-    icon: '🔗',
-    color: 'from-teal-600/20 to-cyan-600/10',
-    borderColor: 'border-teal-500/30',
-    iconBg: 'bg-teal-600/20',
+    description: 'Recursively scan a Drive folder for images and populate their links into a Google Sheet tab.',
+    category: 'Drive',
     fields: [
       { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
-      { key: 'drive_folder_id', label: 'Drive Folder ID (to scan)', type: 'text', placeholder: '1dm9Ga3KEGwl...', required: true },
+      { key: 'drive_folder_id', label: 'Drive Folder ID to Scan', type: 'text', placeholder: '1dm9Ga3KEGwl...', required: true },
       { key: 'spreadsheet_id', label: 'Spreadsheet ID', type: 'text', placeholder: '1f6mHt411jTh...', required: true },
       { key: 'sheet_name', label: 'Sheet Tab Name', type: 'text', placeholder: 'Sheet1', defaultValue: 'Sheet1', required: true },
     ],
@@ -227,7 +249,7 @@ export const TOOLS = [
         steps: [],
         global_steps: [{
           activity: 'sync_drive_image_links_to_sheet',
-          id: 'sync_images',
+          id: 'sync_image_links',
           inputs: {
             drive_folder_id: fields.drive_folder_id,
             spreadsheet_id: fields.spreadsheet_id,
@@ -237,4 +259,102 @@ export const TOOLS = [
       },
     }),
   },
+
+  // ── 7. Random Images Organizer ─────────────────────────────────────────
+  {
+    id: 'random_images_organizer',
+    name: 'Random Images Organizer',
+    description: 'Group images by SKU from multiple sheet columns, push them to Drive subfolders, and update the output column.',
+    category: 'Images',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 'drive_parent_folder_id', label: 'Drive Parent Folder ID', type: 'text', placeholder: '1-qeJt8VbYB6...', required: true },
+      { key: 'sku_column', label: 'SKU Column Name', type: 'text', placeholder: 'SKU Name', defaultValue: 'SKU Name', required: true },
+      { key: 'output_column', label: 'Output Column Letter', type: 'text', placeholder: 'L', defaultValue: 'L' },
+      { key: 'product_image_col', label: 'Product Image Column', type: 'text', placeholder: 'Product image', defaultValue: 'Product image' },
+      { key: 'product_image_col2', label: 'Product Image Column 2', type: 'text', placeholder: 'Product image1', defaultValue: 'Product image1' },
+      { key: 'pairing_image_col', label: 'Pairing Image Column', type: 'text', placeholder: 'BOTTOM / TOP', defaultValue: 'BOTTOM / TOP' },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'copy_random_images',
+      tenant_name: 'Random Images Organizer',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        drive_parent_folder_id: fields.drive_parent_folder_id,
+        sku_column: fields.sku_column,
+        output_column: fields.output_column,
+        require_validation_approval: false,
+        steps: [
+          {
+            activity: 'organize_sku_images_in_drive',
+            id: 'organize_sku',
+            inputs: {
+              drive_parent_folder_id: '${config.drive_parent_folder_id}',
+              sku_name: '${row.' + fields.sku_column + '}',
+              product_image_links: [
+                '${row.' + fields.product_image_col + '}',
+                '${row.' + fields.product_image_col2 + '}',
+              ],
+              pairing_image_link: '${row.' + fields.pairing_image_col + '}',
+            },
+          },
+          {
+            activity: 'update_cell',
+            id: 'update_sheet',
+            inputs: {
+              spreadsheet_id: '${spreadsheet_id}',
+              sheet_name: '${resolved_sheet_name}',
+              range: '${config.output_column}${row_number}',
+              values: [['${organize_sku}']],
+            },
+          },
+        ],
+      },
+    }),
+  },
+
+  // ── 8. Drive Image Links for SKU ──────────────────────────────────────
+  {
+    id: 'sku_image_links',
+    name: 'SKU Drive Image Links',
+    description: 'Look up image files in a Drive folder by SKU prefix and return their links (first image, all comma-separated, or newline-separated).',
+    category: 'Drive',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL (for context)', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 'parent_folder_id', label: 'Drive Parent Folder ID', type: 'text', placeholder: '1d_0_5vL5iO8...', required: true },
+      { key: 'sku_id', label: 'SKU ID to Search', type: 'text', placeholder: 'SKU-001', required: true },
+      {
+        key: 'return_format', label: 'Return Format', type: 'select',
+        options: [
+          { value: 'first_image', label: 'First image only' },
+          { value: 'all_images_comma', label: 'All images (comma-separated)' },
+          { value: 'all_images_newline', label: 'All images (newline-separated)' },
+        ],
+        defaultValue: 'first_image',
+      },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'sku_image_links',
+      tenant_name: 'SKU Drive Image Links',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        require_validation_approval: false,
+        steps: [],
+        global_steps: [{
+          activity: 'get_drive_image_links_for_sku',
+          id: 'get_sku_links',
+          inputs: {
+            parent_folder_id: fields.parent_folder_id,
+            sku_id: fields.sku_id,
+            return_format: fields.return_format,
+          },
+        }],
+      },
+    }),
+  },
 ];
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function bool(val) {
+  return val === true || val === 'true';
+}
