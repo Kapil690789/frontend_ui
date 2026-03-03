@@ -1,0 +1,240 @@
+// All available workflow tools and their configuration
+export const API_URL = 'http://localhost:8000/workflows/run';
+
+export const TOOLS = [
+  {
+    id: 'scene7_downloader',
+    name: 'Scene7 Image Downloader',
+    description: 'Download product images from Kate Spade or Coach Scene7 CDN based on a Google Sheet.',
+    icon: '📸',
+    color: 'from-pink-600/20 to-rose-600/10',
+    borderColor: 'border-pink-500/30',
+    iconBg: 'bg-pink-600/20',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 'column_name', label: 'Code Column Name', type: 'text', placeholder: 'Bag code', required: true, defaultValue: 'Bag code' },
+      { key: 'drive_folder_id', label: 'Drive Folder ID (destination)', type: 'text', placeholder: '1NjyIOB4f...', required: true },
+      { key: 'base_url_template', label: 'Scene7 Base URL Template', type: 'text', placeholder: 'https://katespade.scene7.com/is/image/KateSpade/{}?scl=1', required: true, defaultValue: 'https://katespade.scene7.com/is/image/KateSpade/{}?scl=1' },
+      { key: 'code_transform', label: 'Code Transform', type: 'select', options: ['none', 'upper', 'lower'], defaultValue: 'upper', help: 'UPPER for Kate Spade, lower for Coach' },
+      { key: 'status_column', label: 'Status Column Name', type: 'text', placeholder: 'Status', defaultValue: 'Status' },
+      { key: 'check_url_exists', label: 'Check URL Before Downloading', type: 'boolean', defaultValue: true, help: 'Skip 404 images to avoid broken downloads' },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'scene7_downloader',
+      tenant_name: 'Scene7 Downloader',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        require_validation_approval: false,
+        steps: [],
+        global_steps: [{
+          activity: 'download_and_upload_scene7_images',
+          id: 'download_images',
+          inputs: {
+            file_uri: '${input.file_uri}',
+            column_name: fields.column_name,
+            base_url_template: fields.base_url_template,
+            drive_folder_id: fields.drive_folder_id,
+            overwrite: false,
+            code_transform: fields.code_transform === 'none' ? null : fields.code_transform,
+            status_column: fields.status_column || 'Status',
+            check_url_exists: fields.check_url_exists === true || fields.check_url_exists === 'true',
+          },
+        }],
+      },
+    }),
+  },
+
+  {
+    id: 'pdf_generator',
+    name: 'PDF Generator',
+    description: 'Create printable PDFs from a Google Sheet with product images and descriptions.',
+    icon: '📄',
+    color: 'from-amber-600/20 to-orange-600/10',
+    borderColor: 'border-amber-500/30',
+    iconBg: 'bg-amber-600/20',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 's3_bucket', label: 'S3 Bucket', type: 'text', placeholder: 'flock-generation-automation', defaultValue: 'flock-generation-automation', required: true },
+      { key: 's3_prefix', label: 'S3 Prefix (output folder)', type: 'text', placeholder: 'pdf_test', defaultValue: 'pdf_test', required: true },
+      { key: 'images_per_row', label: 'Images Per Row', type: 'number', defaultValue: 3 },
+      { key: 'rows_per_pdf', label: 'Rows Per PDF', type: 'number', defaultValue: 25 },
+      { key: 'max_workers', label: 'Max Workers (Parallelism)', type: 'number', defaultValue: 10 },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'pdf_gen',
+      tenant_name: 'PDF Generator',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        require_validation_approval: false,
+        images_per_row: Number(fields.images_per_row),
+        rows_per_pdf: Number(fields.rows_per_pdf),
+        s3_bucket: fields.s3_bucket,
+        s3_prefix: fields.s3_prefix,
+        steps: [{
+          activity: 'generate_pdf_from_sheet',
+          id: 'generate_pdf',
+          inputs: {
+            images_per_row: '${config.images_per_row}',
+            rows_per_pdf: '${config.rows_per_pdf}',
+            rows: '${rows}',
+            s3_bucket: '${config.s3_bucket}',
+            s3_prefix: '${config.s3_prefix}',
+            max_workers: Number(fields.max_workers),
+          },
+        }],
+      },
+    }),
+  },
+
+  {
+    id: 'drive_folder_sync',
+    name: 'Drive Folder Sync',
+    description: 'Match SKU names from a sheet to subfolders in Google Drive and write folder links back.',
+    icon: '📂',
+    color: 'from-blue-600/20 to-cyan-600/10',
+    borderColor: 'border-blue-500/30',
+    iconBg: 'bg-blue-600/20',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 'drive_folder_id', label: 'Drive Folder ID (to scan)', type: 'text', placeholder: '1kQO7uq3cW8...', required: true },
+      { key: 'sku_column', label: 'SKU Column Name', type: 'text', placeholder: 'Sku_id', defaultValue: 'Sku_id', required: true },
+      { key: 'target_column', label: 'Target Column (to write links)', type: 'text', placeholder: 'Edit folder links', defaultValue: 'Edit folder links', required: true },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'drive_folder_sync',
+      tenant_name: 'Drive Folder Sync',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        require_validation_approval: false,
+        steps: [],
+        global_steps: [{
+          activity: 'sync_drive_folders_to_sheet',
+          id: 'sync_drive_folders',
+          inputs: {
+            file_uri: '${input.file_uri}',
+            drive_folder_id: fields.drive_folder_id,
+            sku_column: fields.sku_column,
+            target_column: fields.target_column,
+          },
+        }],
+      },
+    }),
+  },
+
+  {
+    id: 'sku_organizer',
+    name: 'SKU Image Organizer',
+    description: 'Find SKU images in a source folder, copy them into per-SKU subfolders, and update the sheet.',
+    icon: '🗂️',
+    color: 'from-green-600/20 to-emerald-600/10',
+    borderColor: 'border-green-500/30',
+    iconBg: 'bg-green-600/20',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 'source_folder_id', label: 'Source Drive Folder ID', type: 'text', placeholder: '1d_0_5vL5iO8...', required: true },
+      { key: 'destination_folder_id', label: 'Destination Drive Folder ID', type: 'text', placeholder: '1d_0_5vL5iO8...', required: true },
+      { key: 'sku_column', label: 'SKU Column Name', type: 'text', placeholder: 'Sku_id', defaultValue: 'Sku_id', required: true },
+      { key: 'output_column', label: 'Output Column (for links)', type: 'text', placeholder: 'Image Download URL', defaultValue: 'Image Download URL' },
+      { key: 'overwrite', label: 'Overwrite Existing', type: 'boolean', defaultValue: false },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'sku_organizer',
+      tenant_name: 'SKU Image Organizer',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        require_validation_approval: false,
+        steps: [],
+        global_steps: [{
+          activity: 'organize_and_copy_sku_images',
+          id: 'organize_sku_images',
+          inputs: {
+            file_uri: '${input.file_uri}',
+            source_folder_id: fields.source_folder_id,
+            destination_folder_id: fields.destination_folder_id,
+            sku_column: fields.sku_column,
+            output_column: fields.output_column,
+            overwrite: fields.overwrite === true || fields.overwrite === 'true',
+          },
+        }],
+      },
+    }),
+  },
+
+  {
+    id: 'sku_folder_creator',
+    name: 'SKU Folder Creator',
+    description: 'Read SKU IDs from a sheet, create Drive folders for each, download product/source images, and write links back.',
+    icon: '📁',
+    color: 'from-violet-600/20 to-purple-600/10',
+    borderColor: 'border-violet-500/30',
+    iconBg: 'bg-violet-600/20',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 'output_folder_id', label: 'Output Drive Folder ID', type: 'text', placeholder: '1jEUBAFpMvhz...', required: true },
+      { key: 'sku_column', label: 'SKU Column Name', type: 'text', placeholder: 'Sku_id', defaultValue: 'Sku_id', required: true },
+      { key: 'folder_link_column', label: 'Folder Link Column', type: 'text', placeholder: 'Edit folder links', defaultValue: 'Edit folder links' },
+      { key: 'product_image_column', label: 'Product Image Column', type: 'text', placeholder: 'Product image', defaultValue: 'Product image' },
+      { key: 'source_image_column', label: 'Source Image Column', type: 'text', placeholder: 'Source image', defaultValue: 'Source image' },
+      { key: 'overwrite', label: 'Overwrite Existing', type: 'boolean', defaultValue: false },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'sku_folder_creator',
+      tenant_name: 'SKU Folder Creator',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        require_validation_approval: false,
+        steps: [],
+        global_steps: [{
+          activity: 'organize_sku_folders_in_drive',
+          id: 'organize_sku_folders',
+          timeout_minutes: 60,
+          inputs: {
+            file_uri: '${input.file_uri}',
+            output_folder_id: fields.output_folder_id,
+            sku_column: fields.sku_column,
+            folder_link_column: fields.folder_link_column,
+            overwrite: fields.overwrite === true || fields.overwrite === 'true',
+            image_columns: [
+              { column: fields.product_image_column, subfolder: 'Product Image' },
+              { column: fields.source_image_column, subfolder: 'Source Image' },
+            ],
+          },
+        }],
+      },
+    }),
+  },
+
+  {
+    id: 'image_links_to_sheet',
+    name: 'Image Links to Sheet',
+    description: 'Recursively scan a Drive folder for images and write their links into a Google Sheet.',
+    icon: '🔗',
+    color: 'from-teal-600/20 to-cyan-600/10',
+    borderColor: 'border-teal-500/30',
+    iconBg: 'bg-teal-600/20',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 'drive_folder_id', label: 'Drive Folder ID (to scan)', type: 'text', placeholder: '1dm9Ga3KEGwl...', required: true },
+      { key: 'spreadsheet_id', label: 'Spreadsheet ID', type: 'text', placeholder: '1f6mHt411jTh...', required: true },
+      { key: 'sheet_name', label: 'Sheet Tab Name', type: 'text', placeholder: 'Sheet1', defaultValue: 'Sheet1', required: true },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'image_links_sync',
+      tenant_name: 'Image Links to Sheet',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        require_validation_approval: false,
+        steps: [],
+        global_steps: [{
+          activity: 'sync_drive_image_links_to_sheet',
+          id: 'sync_images',
+          inputs: {
+            drive_folder_id: fields.drive_folder_id,
+            spreadsheet_id: fields.spreadsheet_id,
+            sheet_name: fields.sheet_name,
+          },
+        }],
+      },
+    }),
+  },
+];
