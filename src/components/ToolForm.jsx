@@ -135,10 +135,27 @@ export default function ToolForm({ tool }) {
         body: JSON.stringify(payload),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.detail || data?.message || `HTTP ${res.status}`)
+      if (!res.ok) {
+        let errorMsg = `Service error (${res.status}). Please verify your information and try again.`
+        if (data?.detail) {
+          if (Array.isArray(data.detail)) {
+            // Format FastAPI Pydantic validation errors nicely
+            errorMsg = data.detail.map(e => `${e.loc?.slice(1)?.join(' -> ') || 'Input'}: ${e.msg}`).join(' | ')
+          } else if (typeof data.detail === 'string') {
+            errorMsg = data.detail
+          }
+        } else if (data?.message) {
+          errorMsg = data.message
+        }
+        throw new Error(errorMsg)
+      }
       setResult(data)
     } catch (err) {
-      setError(err.message || 'Unknown error')
+      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        setError('Network Error: Could not connect to the server. Please ensure the backend API is running on localhost:8000.')
+      } else {
+        setError(err.message || 'An unexpected error occurred while processing your request.')
+      }
     } finally {
       setLoading(false)
     }

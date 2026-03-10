@@ -42,7 +42,7 @@ export const TOOLS = [
         key: 'code_transform', label: 'Code Transform', type: 'select',
         options: [{ value: 'none', label: 'None (keep as-is)' }, { value: 'upper', label: 'UPPER CASE' }, { value: 'lower', label: 'lower case' }],
         defaultValue: 'upper',
-        help: 'Kate Spade → UPPER, Coach → lower',
+        help: 'Kate Spade -> UPPER, Coach -> lower',
       },
       { key: 'status_column', label: 'Status Column Name', type: 'text', placeholder: 'Status', defaultValue: 'Status' },
       { key: 'check_url_exists', label: 'Pre-flight URL Check', type: 'boolean', defaultValue: true, help: 'Send a HEAD request before downloading to skip broken/missing images.' },
@@ -313,7 +313,7 @@ export const TOOLS = [
     }),
   },
 
-  // ── 8. Drive Image Links for SKU ──────────────────────────────────────
+  // 8. Drive Image Links for SKU
   {
     id: 'sku_image_links',
     name: 'SKU Drive Image Links',
@@ -347,6 +347,43 @@ export const TOOLS = [
             parent_folder_id: fields.parent_folder_id,
             sku_id: fields.sku_id,
             return_format: fields.return_format,
+          },
+        }],
+      },
+    }),
+  },
+
+  // 9. Nested Image Matcher
+  {
+    id: 'drive_image_matcher_nested',
+    name: 'Nested Image Matcher',
+    description: 'Reads SKU and Item Description from a Google Sheet, searches a nested 3-level Drive organization (Root → Category → Style), links images by color code, and updates the sheet.',
+    category: 'Drive',
+    fields: [
+      { key: 'file_uri', label: 'Google Sheet URL', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true },
+      { key: 'drive_folder_id', label: 'Root Drive Folder ID', type: 'text', placeholder: '1kQO7uq3cW8...', required: true },
+      { key: 'sku_column', label: 'SKU Column Name', type: 'text', placeholder: 'SKU ID - TOP', defaultValue: 'SKU ID - TOP', required: true },
+      { key: 'description_column', label: 'Item Description Column', type: 'text', placeholder: 'ITEM DESCRIPTION - TOP', defaultValue: 'ITEM DESCRIPTION - TOP', required: true },
+      { key: 'output_column', label: 'Output Column', type: 'text', placeholder: 'Image Download URL', defaultValue: 'Image Download URL', required: true },
+      { key: 'overwrite', label: 'Overwrite Existing Links', type: 'boolean', defaultValue: true },
+    ],
+    buildPayload: (fields) => ({
+      tenant_id: 'nested_image_matcher',
+      tenant_name: 'Nested Image Matcher',
+      file_uri: fields.file_uri,
+      tenant_config: {
+        require_validation_approval: false,
+        steps: [],
+        global_steps: [{
+          activity: 'sync_nested_style_folder_images',
+          id: 'match_nested_images',
+          inputs: {
+            file_uri: '${input.file_uri}',
+            drive_folder_id: fields.drive_folder_id,
+            sku_column: fields.sku_column,
+            description_column: fields.description_column,
+            output_column: fields.output_column,
+            overwrite: bool(fields.overwrite),
           },
         }],
       },
