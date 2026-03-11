@@ -389,6 +389,70 @@ export const TOOLS = [
       },
     }),
   },
+
+  // 10. Interactive Bag Annotation
+  {
+    id: 'interactive_bag_annotation',
+    name: 'Interactive Bag Annotation',
+    description: 'Downloads images from a Drive folder, opens an interactive popup UI for human annotation (clicking points on straps), and saves the resulting CSV back to the same Drive folder.',
+    category: 'Annotation',
+    fields: [
+      { key: 'drive_folder_id', label: 'Drive Folder ID (Source Images)', type: 'text', placeholder: '1kQO7...', required: true },
+      { key: 'batch_size', label: 'Batch Size', type: 'text', placeholder: '100', defaultValue: '100', required: true }
+    ],
+    buildPayload: (fields) => {
+      // Create a unique temporary directory name for this run to avoid collisions
+      const tempDir = `/tmp/bag_annotation_${Date.now()}`;
+      const outputCsv = `${tempDir}/straps_points_data_master.csv`;
+      
+      return {
+        tenant_id: 'bag_annotation',
+        tenant_name: 'Interactive Bag Annotation',
+        file_uri: 'https://docs.google.com/spreadsheets/d/dummy', // GenericWorkflow validation requires a URL, even if unused by activities
+        tenant_config: {
+          require_validation_approval: false,
+          steps: [],
+          global_steps: [
+            {
+              activity: 'download_drive_folder_files',
+              id: 'download_images',
+              inputs: {
+                folder_id: fields.drive_folder_id,
+                destination_folder: tempDir
+              }
+            },
+            {
+              activity: 'run_local_annotation_ui',
+              id: 'run_ui',
+              timeout_minutes: 1440, // 24 hours to allow human interaction
+              inputs: {
+                input_directory: tempDir,
+                output_csv: outputCsv,
+                batch_size: parseInt(fields.batch_size) || 100
+              }
+            },
+            {
+              activity: 'upload_to_s3',
+              id: 'upload_csv_s3',
+              inputs: {
+                local_file_paths: [outputCsv],
+                bucket_name: 'flock-generation-automation',
+                s3_key_prefix_main: `bag_annotations/csvs_${Date.now()}`
+              }
+            },
+            {
+              activity: 'upload_drive_files',
+              id: 'upload_csv_drive',
+              inputs: {
+                local_paths: [outputCsv],
+                parent_id: fields.drive_folder_id
+              }
+            }
+          ]
+        }
+      };
+    }
+  }
 ];
 
 // ── Utility ───────────────────────────────────────────────────────────────────
